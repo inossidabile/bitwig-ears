@@ -3,7 +3,7 @@
 // Send OSC /play /stop /restart /status to 7879; the script answers "/reply" (JSON string) to UDP 7880.
 loadAPI(18);
 host.setShouldFailOnDeprecatedUse(false);
-host.defineController("bitwig-ears", "MCP Bridge", "0.24.0",
+host.defineController("bitwig-ears", "MCP Bridge", "0.25.0",
     "6f1d4a52-3b0e-4c7e-9a41-5d0f2a7b9c11", "bitwig-ears");
 
 var PORT = 7879;        // commands in (UDP)
@@ -387,7 +387,39 @@ function startCreateTrackJob(a) {
     return { ok: true, started: true };
 }
 
-// ---- read-only (but selects the track's first drum device in the UI): list a drum device's pads ----
+
+// ---- selection: jobs that must move Bitwig's selected track/device put it back when they finish ----
+function snapshotSelection() {
+    var te = !!cursorTrack.exists().get(), de = !!cursorDevice.exists().get();
+    return { trackExists: te, track: te ? String(cursorTrack.name().get()) : null,
+             device: de ? { name: String(cursorDevice.name().get()), pos: Number(cursorDevice.position().get()) } : null };
+}
+
+// Reselect the track (and, if it was one of the track's first 3 devices, that device) from before the job.
+// Calls done() afterwards. Never throws; logs what it did or why it could not.
+function restoreSelection(sn, done) {
+    try {
+        if (!sn.trackExists) { jlog("selection: nothing was selected before; left as is"); done(); return; }
+        var ex = existing(), matches = [];
+        for (var i = 0; i < ex.length; i++) if (String(ex[i].track.name().get()) === sn.track) matches.push(ex[i]);
+        if (matches.length !== 1) {
+            jlog("selection NOT restored: " + matches.length + " tracks are named '" + sn.track + "'"); done(); return;
+        }
+        cursorTrack.selectChannel(matches[0].track);
+        after(500, function () {
+            var note = "track '" + sn.track + "'";
+            if (sn.device && sn.device.pos >= 0 && sn.device.pos < 3) {
+                var dev = matches[0].devices.getItemAt(sn.device.pos);
+                if (dev.exists().get() && String(dev.name().get()) === sn.device.name) {
+                    cursorDevice.selectDevice(dev); note += ", device '" + sn.device.name + "'";
+                }
+            }
+            after(400, function () { jlog("selection restored: " + note); done(); });
+        });
+    } catch (e) { jlog("selection restore failed: " + e); done(); }
+}
+
+// ---- list a drum device's pads (moves the selection, then restores it) ----
 function startDrumPadsJob(a) {
     if (jobState === "running") return { ok: false, error: "a job is already running" };
     var it = findTrack(a.track);
@@ -399,6 +431,7 @@ function startDrumPadsJob(a) {
     }
     if (!dev) return { ok: false, error: "no drum device among the first 3 devices on " + a.track };
     jobLog = []; jobState = "running";
+    var sn = snapshotSelection();
     cursorTrack.selectChannel(it.track);
     after(500, function () {
         jlog("cursor track = " + cursorTrack.name().get());
@@ -409,10 +442,10 @@ function startDrumPadsJob(a) {
                 var pad = padBank.getItemAt(q);
                 if (pad.exists().get()) pads.push({ index: q, name: String(pad.name().get()) });
             }
-            jlog("device=" + cursorDevice.name().get() + " hasDrumPads=" + cursorDevice.hasDrumPads().get() +
-                 " scroll=" + padBank.scrollPosition().get());
-            jlog(JSON.stringify(pads));
-            jobState = "done";
+            var info = "device=" + cursorDevice.name().get() + " hasDrumPads=" + cursorDevice.hasDrumPads().get() +
+                       " scroll=" + padBank.scrollPosition().get();
+            // result lines must come LAST (the server reads the last two log lines)
+            restoreSelection(sn, function () { jlog(info); jlog(JSON.stringify(pads)); jobState = "done"; });
         });
     });
     return { ok: true, started: true };
@@ -454,15 +487,16 @@ function startTapStatusJob(a) {
     jobLog = []; jobState = "running";
     var tap = findTap(it);
     if (!tap) { jlog(JSON.stringify({ has_tap: false })); jobState = "done"; return { ok: true, started: true }; }
+    var sn = snapshotSelection();
     cursorTrack.selectChannel(it.track);
     after(500, function () {
         cursorDevice.selectDevice(tap.dev);
         after(1000, function () {
             var rc = slotParam();
-            jlog(JSON.stringify({ has_tap: true, device_index: tap.index,
+            var result = JSON.stringify({ has_tap: true, device_index: tap.index,
                 slot: rc ? Math.round(Number(rc.value().get()) * 63) + 1 : null, slot_param_found: !!rc,
-                cursor_device: String(cursorDevice.name().get()), remote_controls: remoteDump() }));
-            jobState = "done";
+                cursor_device: String(cursorDevice.name().get()), remote_controls: remoteDump() });
+            restoreSelection(sn, function () { jlog(result); jobState = "done"; });
         });
     });
     return { ok: true, started: true };
@@ -475,31 +509,34 @@ function startAddTapJob(a) {
     if (!(slot >= 1 && slot <= 64)) return { ok: false, error: "slot must be 1-64" };
     if (findTap(it)) return { ok: false, error: "track already has a tap plugin" };
     jobLog = []; jobState = "running";
+    var sn = snapshotSelection();   // taken before the insert, which may itself change the selection
     it.track.endOfDeviceChainInsertionPoint().insertCLAPDevice(TAP_CLAP_ID);
     jlog("insertCLAPDevice requested on " + it.id);
     after(1500, function () {
         var tap = findTap(it);
-        if (!tap) { jlog(JSON.stringify({ added: false, error: "tap not found after insert" })); jobState = "failed"; return; }
+        if (!tap) { restoreSelection(sn, function () { jlog(JSON.stringify({ added: false, error: "tap not found after insert" })); jobState = "failed"; }); return; }
         cursorTrack.selectChannel(it.track);
         after(500, function () {
             cursorDevice.selectDevice(tap.dev);
             after(1000, function () {
                 var rc = slotParam();
                 if (!rc) {   // plugin is in; Bitwig just doesn't expose its Slot parameter to scripts
-                    jlog(JSON.stringify({ added: true, slot: null, note: "Slot parameter not exposed to scripts",
-                                          cursor_device: String(cursorDevice.name().get()), remote_controls: remoteDump() }));
-                    jobState = "done"; return;
+                    var res = JSON.stringify({ added: true, slot: null, note: "Slot parameter not exposed to scripts",
+                                               cursor_device: String(cursorDevice.name().get()), remote_controls: remoteDump() });
+                    restoreSelection(sn, function () { jlog(res); jobState = "done"; }); return;
                 }
                 rc.value().set((slot - 1) / 63);
                 after(600, function () {
-                    jlog(JSON.stringify({ added: true, device_index: tap.index, slot: Math.round(Number(rc.value().get()) * 63) + 1 }));
-                    jobState = "done";
+                    var res2 = JSON.stringify({ added: true, device_index: tap.index, slot: Math.round(Number(rc.value().get()) * 63) + 1 });
+                    restoreSelection(sn, function () { jlog(res2); jobState = "done"; });
                 });
             });
         });
     });
     return { ok: true, started: true };
 }
+
+function selectionInfo() { var sn = snapshotSelection(); sn.ok = true; return sn; }
 
 function trackFail() { return { ok: false, error: "track features unavailable: " + setupError }; }
 
@@ -583,6 +620,7 @@ function handle(addr, args) {
         case "/drum_pads": return setupError ? trackFail() : startDrumPadsJob(args);
         case "/tap_status": return setupError ? trackFail() : startTapStatusJob(args);
         case "/add_tap": return setupError ? trackFail() : startAddTapJob(args);
+        case "/selection": return selectionInfo();
         case "/job": return { ok: true, state: jobState, log: jobLog };
         case "/meters": return setupError ? trackFail() : metersNow();
         default: return { ok: false, error: "unknown address " + addr };
@@ -596,6 +634,9 @@ function init() {
     cursorTrack = host.createCursorTrack("bitwig-ears", "bitwig-ears", 0, 0, false);
     cursorDevice = cursorTrack.createCursorDevice();
     cursorTrack.name().markInterested();
+    cursorTrack.exists().markInterested();
+    cursorDevice.exists().markInterested();
+    cursorDevice.position().markInterested();
     cursorDevice.name().markInterested();
     cursorDevice.hasDrumPads().markInterested();
     padBank = cursorDevice.createDrumPadBank(32);
@@ -651,7 +692,7 @@ function init() {
     osc.createUdpServer(PORT, space);
 
     println("bitwig-ears transport bridge (OSC/UDP) on port " + PORT);
-    host.showPopupNotification("bitwig-ears v0.23 loaded (OSC in " + PORT + ", out " + REPLY_PORT + ")");
+    host.showPopupNotification("bitwig-ears v0.25 loaded (OSC in " + PORT + ", out " + REPLY_PORT + ")");
 }
 
 function flush() {}
