@@ -73,22 +73,39 @@ returns the track to the arrangement and deletes the temporary clip. It takes ab
 seconds, briefly plays the transport, and restores loop/punch/record settings and the playhead.
 **Recording replaces anything already in that time range on that track.**
 
-## Setup
+## Quick start
 
-Requirements: Bitwig Studio 5.3 or newer, Rust (`cargo`), [`uv`](https://docs.astral.sh/uv/), macOS.
+Requirements: macOS, Bitwig Studio 5.3 or newer, [Rust](https://rustup.rs) (`cargo`) and
+[`uv`](https://docs.astral.sh/uv/).
 
-1. **Plugin.** From `plugin/`: `./bundle-macos.sh --install`. This builds, wraps it as a `.clap` bundle,
-   signs it ad hoc, and copies it to `~/Library/Audio/Plug-Ins/CLAP`. Rescan plugins in Bitwig if it is not
-   listed.
-2. **Controller script.** Copy `bitwig/bitwig-ears.control.js` into
-   `~/Documents/Bitwig Studio/Controller Scripts/bitwig-ears/`. In Bitwig: Settings → Controllers → Add
-   controller → vendor `bitwig-ears`, model `Transport Bridge`. A "loaded" popup confirms it. After you change
-   the script, remove and re-add the controller to reload it.
-3. **MCP server.** Register it with your client, for example with Claude Code:
-   ```
-   claude mcp add bitwig-ears -- uv run --directory /path/to/bitwig-ears/server server.py
-   ```
-4. Put **Bitwig Ears Tap** on any track you want to hear, or use `ensure_tap`.
+```
+git clone https://github.com/<you>/bitwig-ears && cd bitwig-ears
+./install.sh
+```
+
+The script builds and installs the tap plugin, copies the controller script into Bitwig's folder, prepares the
+server's Python environment, and registers the MCP server with Claude Code if the `claude` CLI is found. Then
+two steps only Bitwig can do:
+
+1. **Settings → Controllers → Add controller → vendor `bitwig-ears`, model `MCP Bridge`.** A "loaded"
+   popup confirms it. After updating the script, remove and re-add the controller.
+2. **Put "Bitwig Ears Tap" on tracks you want to hear** (rescan plugins if it is not listed), or let the
+   assistant add it with `ensure_tap`.
+
+Restart your MCP client afterwards. Run `./install.sh --check` at any time for a health check (plugin, script,
+whether the script is actually loaded in Bitwig, MCP registration, ports).
+
+Options: `--link` symlinks the controller script (repo edits go live after a reload in Bitwig), `--no-plugin`,
+`--no-mcp`, `--dry-run`, `--uninstall`.
+
+Other MCP clients: register `uv run --directory /path/to/bitwig-ears/server server.py` as a stdio server.
+
+### Manual install
+
+1. Plugin: from `plugin/`, `./bundle-macos.sh --install`.
+2. Script: copy `bitwig/bitwig-ears.control.js` to
+   `~/Documents/Bitwig Studio/Controller Scripts/bitwig-ears/`.
+3. Server: `claude mcp add bitwig-ears -- uv run --directory /path/to/bitwig-ears/server server.py`.
 
 Ports used (all localhost): TCP 7878 (plugin → server), UDP 7879 (server → script), UDP 7880 (script → server).
 Only one server instance can run at a time. `BITWIG_EARS_INGEST_PORT` changes the TCP port for tests.

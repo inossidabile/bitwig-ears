@@ -26,7 +26,7 @@ PLIST
 codesign --force --sign - "$B"
 echo "built $B"
 if [ "$1" = "--install" ]; then
-  D="$HOME/Library/Audio/Plug-Ins/CLAP"
+  D="${CLAP_DIR:-$HOME/Library/Audio/Plug-Ins/CLAP}"
   mkdir -p "$D"
   rm -rf "$D/BitwigEarsTap.clap"
   cp -R "$B" "$D/"

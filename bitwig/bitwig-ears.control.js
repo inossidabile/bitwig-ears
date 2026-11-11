@@ -3,7 +3,7 @@
 // Send OSC /play /stop /restart /status to 7879; the script answers "/reply" (JSON string) to UDP 7880.
 loadAPI(18);
 host.setShouldFailOnDeprecatedUse(false);
-host.defineController("bitwig-ears", "Transport Bridge", "0.23.0",
+host.defineController("bitwig-ears", "MCP Bridge", "0.24.0",
     "6f1d4a52-3b0e-4c7e-9a41-5d0f2a7b9c11", "bitwig-ears");
 
 var PORT = 7879;        // commands in (UDP)

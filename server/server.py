@@ -157,10 +157,10 @@ async def transport(action: str = "status") -> dict:
         return reply
     except (OSError, ValueError) as e:  # includes socket timeout
         return {"ok": False, "error": "Bitwig controller script did not answer on UDP port "
-                f"{CONTROL_PORT} ({e}). Add 'bitwig-ears / Transport Bridge' in Bitwig and reload it."}
+                f"{CONTROL_PORT} ({e}). Add 'bitwig-ears / MCP Bridge' in Bitwig and reload it."}
 
 NO_SCRIPT = ("Bitwig controller script did not answer on UDP port {port} ({e}). "
-             "Add 'bitwig-ears / Transport Bridge' in Bitwig (v0.8+) and reload it.")
+             "Add 'bitwig-ears / MCP Bridge' in Bitwig (v0.8+) and reload it.")
 
 async def _bitwig(address: str, arg: dict | None = None) -> dict:
     try:
