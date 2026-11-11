@@ -1,0 +1,9 @@
+# build output and environments
+plugin/target/
+server/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# local script history (git history replaces these)
+bitwig/*-backup.js.txt

@@ -1,0 +1,11 @@
+[project]
+name = "bitwig-ears-server"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.2,<2", "numpy>=1.26"]
+
+[project.scripts]
+bitwig-ears = "server:main"
+
+[tool.uv]
+package = false
